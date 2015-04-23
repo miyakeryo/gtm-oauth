@@ -20,8 +20,6 @@
 #import <Foundation/Foundation.h>
 #import <Security/Security.h>
 
-#if !GTL_REQUIRE_SERVICE_INCLUDES || GTL_INCLUDE_OAUTH
-
 #if TARGET_OS_IPHONE
 
 // If you want to shave a few bytes, and you include GTMOAuthViewTouch.xib
@@ -81,6 +79,7 @@ finishedWithAuth:(GTMOAuthAuthentication *)auth
          error:(NSError *)error;  
 - (BOOL)isNavigationBarTranslucent;
 - (void)moveWebViewFromUnderNavigationBar;
+- (void)popView;
 - (void)clearBrowserCookies;
 @end
 
@@ -98,44 +97,6 @@ finishedWithAuth:(GTMOAuthAuthentication *)auth
 @synthesize userData = userData_;
 @synthesize webView = webView_;
 
-- (id)initWithScope:(NSString *)scope
-           language:(NSString *)language
-     appServiceName:(NSString *)keychainAppServiceName
-           delegate:(id)delegate
-   finishedSelector:(SEL)finishedSelector {
-  // convenient entry point for Google authentication
-  return [self initWithScope:scope
-                    language:language
-             requestTokenURL:nil
-           authorizeTokenURL:nil
-              accessTokenURL:nil
-              authentication:nil
-              appServiceName:keychainAppServiceName
-                    delegate:delegate
-            finishedSelector:finishedSelector];
-}
-
-#if NS_BLOCKS_AVAILABLE
-- (id)initWithScope:(NSString *)scope
-           language:(NSString *)language
-     appServiceName:(NSString *)keychainAppServiceName
-  completionHandler:(void (^)(GTMOAuthViewControllerTouch *viewController, GTMOAuthAuthentication *auth, NSError *error))handler {
-  // convenient entry point for Google authentication
-  self = [self initWithScope:scope
-                    language:language
-             requestTokenURL:nil
-           authorizeTokenURL:nil
-              accessTokenURL:nil
-              authentication:nil
-              appServiceName:keychainAppServiceName
-                    delegate:nil
-            finishedSelector:NULL];
-  if (self) {
-    completionBlock_ = [handler copy];
-  }
-  return self;
-}
-#endif
 
 - (id)initWithScope:(NSString *)scope
            language:(NSString *)language
@@ -159,19 +120,14 @@ finishedWithAuth:(GTMOAuthAuthentication *)auth
 
       // use the supplied auth and OAuth endpoint URLs
       signIn_ = [[GTMOAuthSignIn alloc] initWithAuthentication:auth
-                                                 requestTokenURL:requestURL
-                                               authorizeTokenURL:authorizeURL
-                                                  accessTokenURL:accessURL
-                                                        delegate:self
-                                              webRequestSelector:@selector(signIn:displayRequest:)
-                                                finishedSelector:@selector(signIn:finishedWithAuth:error:)];
+                                               requestTokenURL:requestURL
+                                             authorizeTokenURL:authorizeURL
+                                                accessTokenURL:accessURL
+                                                      delegate:self
+                                            webRequestSelector:@selector(signIn:displayRequest:)
+                                              finishedSelector:@selector(signIn:finishedWithAuth:error:)];
     } else {
-      // use default Google auth and endpoint values
-      signIn_ = [[GTMOAuthSignIn alloc] initWithGoogleAuthenticationForScope:scope
-                                                                      language:language
-                                                                      delegate:self
-                                                            webRequestSelector:@selector(signIn:displayRequest:)
-                                                              finishedSelector:@selector(signIn:finishedWithAuth:error:)];
+      NSAssert(0, @"auth object required");
     }
 
     // the display name defaults to the bundle's name
@@ -184,17 +140,6 @@ finishedWithAuth:(GTMOAuthAuthentication *)auth
       }
     }
     [self setDisplayName:displayName];
-
-    // if the user is signing in to a Google service, we'll delete the
-    // Google authentication browser cookies upon completion
-    //
-    // for other service domains, or to disable clearing of the cookies,
-    // set the browserCookiesURL property explicitly
-    NSString *authorizationHost = [[signIn_ authorizeTokenURL] host];
-    if ([authorizationHost isEqual:@"www.google.com"]) {
-      NSURL *cookiesURL = [NSURL URLWithString:@"https://www.google.com/accounts"];
-      [self setBrowserCookiesURL:cookiesURL];
-    }
 
     [self setKeychainApplicationServiceName:keychainAppServiceName];
   }
@@ -250,13 +195,6 @@ finishedWithAuth:(GTMOAuthAuthentication *)auth
 + (NSString *)authNibName {
   // subclasses may override this to specify a custom nib name
   return @"GTMOAuthViewTouch";
-}
-
-+ (GTMOAuthAuthentication *)authForGoogleFromKeychainForName:(NSString *)appServiceName {
-  GTMOAuthAuthentication *newAuth = [GTMOAuthAuthentication authForInstalledApp];
-  [self authorizeFromKeychainForName:appServiceName
-                      authentication:newAuth];
-  return newAuth;
 }
 
 + (BOOL)authorizeFromKeychainForName:(NSString *)appServiceName
@@ -340,7 +278,7 @@ finishedWithAuth:(GTMOAuthAuthentication *)auth
   [backButton setTitleColor:normalColor forState:UIControlStateNormal];
   [backButton setTitleColor:dimColor forState:UIControlStateDisabled];
   [backButton oauthCompatibilitySetTitleShadowOffset:CGSizeMake(0, -2)];
-  NSString *backTriangle = [NSString stringWithFormat:@"%C", 0x25C0];
+  NSString *backTriangle = [NSString stringWithFormat:@"%C", (unichar)0x25C0];
   [backButton setTitle:backTriangle forState:UIControlStateNormal];
   [backButton addTarget:webView
                  action:@selector(goBack)
@@ -356,7 +294,7 @@ finishedWithAuth:(GTMOAuthAuthentication *)auth
   [forwardButton setTitleColor:normalColor forState:UIControlStateNormal];
   [forwardButton setTitleColor:dimColor forState:UIControlStateDisabled];
   [forwardButton oauthCompatibilitySetTitleShadowOffset:CGSizeMake(0, -2)];
-  NSString *forwardTriangle = [NSString stringWithFormat:@"%C", 0x25B6];
+  NSString *forwardTriangle = [NSString stringWithFormat:@"%C", (unichar)0x25B6];
   [forwardButton setTitle:forwardTriangle forState:UIControlStateNormal];
   [forwardButton addTarget:webView
                     action:@selector(goForward)
@@ -394,29 +332,34 @@ finishedWithAuth:(GTMOAuthAuthentication *)auth
   } else {
     [self constructView];
   }
-  self.navigationItem.leftBarButtonItem = [[[UIBarButtonItem alloc] initWithTitle:@"Cancel" style:UIBarButtonItemStyleDone target:self action:@selector(popView)] autorelease];
-  self.navigationItem.rightBarButtonItem = nil;
 }
 
 
 - (void)viewDidLoad {
+  [super viewDidLoad];
+
   // the app may prefer some html other than blank white to be displayed
   // before the sign-in web page loads
   NSString *html = [self initialHTMLString];
   if ([html length] > 0) {
     [[self webView] loadHTMLString:html baseURL:nil];
   }
+
+  [rightBarButtonItem_ setCustomView:navButtonsView_];
+  [[self navigationItem] setRightBarButtonItem:rightBarButtonItem_];
 }
 
-- (IBAction)popView {
-  NSLog(@"Popping view..");
+- (void)popView {
+  if ([[self navigationController] topViewController] == self) {
+    if (![[self view] isHidden]) {
+      // Set the flag to our viewWillDisappear method so it knows
+      // this is a disappearance initiated by the sign-in object,
+      // not the user cancelling via the navigation controller
+      didDismissSelf_ = YES;
 
-  if (![self.view isHidden]) {
-    isPoppingSelf_ = YES;
-    [self.navigationController dismissModalViewControllerAnimated:YES];
-    [self.view setHidden:YES];
-    [self.navigationController.navigationBar setHidden:YES];
-    isPoppingSelf_ = NO;
+      [[self navigationController] popViewControllerAnimated:YES];
+      [[self view] setHidden:YES];
+    }
   }
 }
 
@@ -436,12 +379,6 @@ finishedWithAuth:(GTMOAuthAuthentication *)auth
   // The sign-in object's cancel method will close the window
   [signIn_ cancelSigningIn];
   hasDoneFinalRedirect_ = YES;
-}
-
-#pragma mark Token Revocation
-
-+ (void)revokeTokenForGoogleAuthentication:(GTMOAuthAuthentication *)auth {
-  [GTMOAuthSignIn revokeTokenForGoogleAuthentication:auth];
 }
 
 #pragma mark Browser Cookies
@@ -510,9 +447,28 @@ finishedWithAuth:(GTMOAuthAuthentication *)auth
 #endif
 
   if (request != nil) {
-    // Display the request.
-    [self setRequest:request];
-    [[self webView] loadRequest:[self request]];
+    const NSTimeInterval kJanuary2011 = 1293840000;
+    BOOL isDateValid = ([[NSDate date] timeIntervalSince1970] > kJanuary2011);
+    if (isDateValid) {
+      // Display the request.
+      [self setRequest:request];
+      [[self webView] loadRequest:[self request]];
+    } else {
+      // clock date is invalid, so signing in would fail with an unhelpful error
+      // from the server. Warn the user in an html string showing a watch icon,
+      // question mark, and the system date and time. Hopefully this will clue
+      // in brighter users, or at least give them a clue when they report the
+      // problem to developers.
+      //
+      // Even better is for apps to check the system clock and show some more
+      // helpful, localized instructions for users; this is really a fallback.
+      NSString *html = @"<html><body><div align=center><font size='7'>"
+        "&#x231A; ?<br><i>System Clock Incorrect</i><br>%@"
+        "</font></div></body></html>";
+      NSString *errHTML = [NSString stringWithFormat:html, [NSDate date]];
+
+      [[self webView] loadHTMLString:errHTML baseURL:nil];
+    }
   } else {
     // request was nil.
     [self popView];
@@ -598,23 +554,26 @@ finishedWithAuth:(GTMOAuthAuthentication *)auth
       // Can't start signing in. We must pop our view.
       // UIWebview needs time to stabilize. Animations need time to complete.
       // We remove ourself from the view stack after that.
-      [self performSelector:@selector(popView) withObject:nil afterDelay:0.5];
+      [self performSelector:@selector(popView)
+                 withObject:nil
+                 afterDelay:0.5
+                    inModes:[NSArray arrayWithObject:NSRunLoopCommonModes]];
     }
   }
   [super viewWillAppear:animated];
 }
 
 - (void)viewWillDisappear:(BOOL)animated {
-  if (!isPoppingSelf_) {
-    // we are not popping ourselves, so presumably we are being popped by the
+  if (!didDismissSelf_) {
+    // We are not popping ourselves, so presumably we are being popped by the
     // navigation controller; tell the sign-in object to close up shop
     //
-    // this will indirectly call our signIn:finishedWithAuth:error: method
+    // This will indirectly call our signIn:finishedWithAuth:error: method
     // for us
     [signIn_ windowWasClosed];
   }
 
-  // prevent the next sign-in from showing in the WebView that the user is
+  // Prevent the next sign-in from showing in the WebView that the user is
   // already signed in
   [self clearBrowserCookies];
 
@@ -846,5 +805,3 @@ finishedWithAuth:(GTMOAuthAuthentication *)auth
 @end
 
 #endif // TARGET_OS_IPHONE
-
-#endif // !GTL_REQUIRE_SERVICE_INCLUDES || GTL_INCLUDE_OAUTH

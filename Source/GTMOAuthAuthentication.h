@@ -13,13 +13,11 @@
  * limitations under the License.
  */
 
-#if !GTL_REQUIRE_SERVICE_INCLUDES || GTL_INCLUDE_OAUTH
-
 // This class implements the OAuth 1.0a protocol for creating and signing
 // requests. http://oauth.net/core/1.0a/
 //
 // Users can rely on +authForInstalledApp for creating a complete authentication
-// object for use with Google's OAuth protocol.
+// object.
 //
 // The user (typically the GTMOAuthSignIn object) can call the methods
 //  - (void)setKeysForResponseData:(NSData *)data;
@@ -36,6 +34,8 @@
   #import "GTLDefines.h"
 #endif
 
+#import "GTMHTTPFetcher.h"
+
 #undef _EXTERN
 #undef _INITIALIZE_AS
 #ifdef GTMOAUTHAUTHENTICATION_DEFINE_GLOBALS
@@ -45,8 +45,6 @@
 #define _EXTERN extern
 #define _INITIALIZE_AS(x)
 #endif
-
-_EXTERN NSString* const kGTMOAuthServiceProviderGoogle _INITIALIZE_AS(@"Google");
 
 _EXTERN NSString* const kGTMOAuthSignatureMethodHMAC_SHA1 _INITIALIZE_AS(@"HMAC-SHA1");
 
@@ -64,6 +62,12 @@ _EXTERN NSString* const kGTMOAuthFetchTypeRequest  _INITIALIZE_AS(@"request");
 _EXTERN NSString* const kGTMOAuthFetchTypeAccess   _INITIALIZE_AS(@"access");
 _EXTERN NSString* const kGTMOAuthFetchTypeUserInfo _INITIALIZE_AS(@"userInfo");
 
+// Notification that sign-in has completed, and token fetches will begin (useful
+// for hiding pre-sign in messages, and showing post-sign in messages
+// during the access fetch)
+_EXTERN NSString* const kGTMOAuthUserWillSignIn      _INITIALIZE_AS(@"kGTMOAuthUserWillSignIn");
+_EXTERN NSString* const kGTMOAuthUserHasSignedIn     _INITIALIZE_AS(@"kGTMOAuthUserHasSignedIn");
+
 // notification for network loss during html sign-in display
 _EXTERN NSString* const kGTMOAuthNetworkLost       _INITIALIZE_AS(@"kGTMOAuthNetworkLost");
 _EXTERN NSString* const kGTMOAuthNetworkFound      _INITIALIZE_AS(@"kGTMOAuthNetworkFound");
@@ -72,7 +76,7 @@ _EXTERN NSString* const kGTMOAuthNetworkFound      _INITIALIZE_AS(@"kGTMOAuthNet
 _EXTERN NSString* const kGTMOAuthSignatureMethodRSA_SHA1  _INITIALIZE_AS(@"RSA-SHA1");
 #endif
 
-@interface GTMOAuthAuthentication : NSObject {
+@interface GTMOAuthAuthentication : NSObject <GTMFetcherAuthorizationProtocol> {
 @private
   // paramValues_ contains the parameters used in requests and responses
   NSMutableDictionary *paramValues_;
@@ -122,7 +126,7 @@ _EXTERN NSString* const kGTMOAuthSignatureMethodRSA_SHA1  _INITIALIZE_AS(@"RSA-S
 @property (nonatomic, copy) NSString *realm;
 @property (nonatomic, copy) NSString *privateKey;
 
-// service identifier, like "Google"; not used for authentication or signing
+// service identifier, like "Twitter"; not used for authentication or signing
 @property (nonatomic, copy) NSString *serviceProvider;
 
 // user email and verified status; not used for authentication or signing
@@ -130,8 +134,8 @@ _EXTERN NSString* const kGTMOAuthSignatureMethodRSA_SHA1  _INITIALIZE_AS(@"RSA-S
 // The verified string can be checked with -boolValue. If the result is false,
 // then the email address is listed with the account on the server, but the
 // address has not been confirmed as belonging to the owner of the account.
-@property (nonatomic, copy) NSString *userEmail;
-@property (nonatomic, copy) NSString *userEmailIsVerified;
+@property (retain) NSString *userEmail;
+@property (retain) NSString *userEmailIsVerified;
 
 // property for using a previously-authorized access token
 @property (nonatomic, copy) NSString *accessToken;
@@ -142,7 +146,7 @@ _EXTERN NSString* const kGTMOAuthSignatureMethodRSA_SHA1  _INITIALIZE_AS(@"RSA-S
 
 // property indicating if this auth has an access token so is suitable for
 // authorizing a request. This does not guarantee that the token is valid.
-@property (nonatomic, readonly) BOOL canAuthorize;
+@property (readonly) BOOL canAuthorize;
 
 // userData is retained for the convenience of the caller
 @property (nonatomic, retain) id userData;
@@ -215,6 +219,8 @@ _EXTERN NSString* const kGTMOAuthSignatureMethodRSA_SHA1  _INITIALIZE_AS(@"RSA-S
 + (NSDictionary *)dictionaryWithResponseData:(NSData *)data;
 + (NSDictionary *)dictionaryWithResponseString:(NSString *)responseStr;
 
++ (NSString *)scopeWithStrings:(NSString *)str, ...;
+
 + (NSString *)stringWithBase64ForData:(NSData *)data;
 
 + (NSString *)HMACSHA1HashForConsumerSecret:(NSString *)consumerSecret
@@ -227,5 +233,3 @@ _EXTERN NSString* const kGTMOAuthSignatureMethodRSA_SHA1  _INITIALIZE_AS(@"RSA-S
 #endif
 
 @end
-
-#endif // #if !GTL_REQUIRE_SERVICE_INCLUDES || GTL_INCLUDE_OAUTH

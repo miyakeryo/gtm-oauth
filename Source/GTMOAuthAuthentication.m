@@ -13,8 +13,6 @@
  * limitations under the License.
  */
 
-#if !GTL_REQUIRE_SERVICE_INCLUDES || GTL_INCLUDE_OAUTH
-
 // HMAC digest
 #import <CommonCrypto/CommonHMAC.h>
 
@@ -478,11 +476,6 @@ static NSString *const kUserEmailIsVerifiedKey    = @"isVerified";
   if (verified) {
     [self setUserEmailIsVerified:verified];
   }
-
-  NSString *screenName = [dict objectForKey:@"screen_name"];
-  if (screenName) {
-    [self setIconURLString:screenName];
-  }
 }
 
 - (void)setKeysForResponseData:(NSData *)data {
@@ -625,11 +618,11 @@ static NSString *const kUserEmailIsVerifiedKey    = @"isVerified";
     realmParam = [NSString stringWithFormat:@"realm=\"%@\", ", encodedVal];
   }
   
-  // add the parameters for "oauth_" keys and the realm
-  // to the authorization header
+  // set the parameters for "oauth_" keys and the realm
+  // in the authorization header
   NSString *authHdr = [NSString stringWithFormat:@"OAuth %@%@",
                        realmParam, paramStr];
-  [request addValue:authHdr forHTTPHeaderField:@"Authorization"];
+  [request setValue:authHdr forHTTPHeaderField:@"Authorization"];
   
   // add any other params as URL query parameters
   if ([extendedParams count] > 0) {
@@ -662,7 +655,62 @@ static NSString *const kUserEmailIsVerifiedKey    = @"isVerified";
   return [self hasAccessToken];
 }
 
-#pragma mark -
+#pragma mark GTMFetcherAuthorizationProtocol Methods
+
+// Implementation of GTMFetcherAuthorizationProtocol methods
+
+- (void)authorizeRequest:(NSMutableURLRequest *)request
+                delegate:(id)delegate
+       didFinishSelector:(SEL)sel {
+  // Authorization entry point with callback for OAuth 2
+  NSError *error = nil;
+  if (![self authorizeRequest:request]) {
+    // failed
+    error = [NSError errorWithDomain:kGTMOAuthErrorDomain
+                                code:-1
+                            userInfo:nil];
+  }
+
+  if (delegate && sel) {
+    NSMethodSignature *sig = [delegate methodSignatureForSelector:sel];
+    NSInvocation *invocation = [NSInvocation invocationWithMethodSignature:sig];
+    [invocation setSelector:sel];
+    [invocation setTarget:delegate];
+    [invocation setArgument:&self atIndex:2];
+    [invocation setArgument:&request atIndex:3];
+    [invocation setArgument:&error atIndex:4];
+    [invocation invoke];
+  }
+}
+
+- (void)stopAuthorization {
+  // nothing to do, since OAuth 1 authorization is synchronous
+}
+
+- (void)stopAuthorizationForRequest:(NSURLRequest *)request {
+  // nothing to do, since OAuth 1 authorization is synchronous
+}
+
+- (BOOL)isAuthorizingRequest:(NSURLRequest *)request {
+  // OAuth 1 auth is synchronous, so authorizations are never pending
+  return NO;
+}
+
+- (BOOL)isAuthorizedRequest:(NSURLRequest *)request {
+  if ([self shouldUseParamsToAuthorize]) {
+    // look for query parameter authorization
+    NSString *query = [[request URL] query];
+    NSDictionary *dict = [[self class] dictionaryWithResponseString:query];
+    NSString *token = [dict valueForKey:kOAuthTokenKey];
+    return ([token length] > 0);
+  } else {
+    // look for header authorization
+    NSString *authStr = [request valueForHTTPHeaderField:@"Authorization"];
+    return ([authStr length] > 0);
+  }
+}
+
+#pragma mark Persistence Response Strings
 
 - (void)setKeysForPersistenceResponseString:(NSString *)str {
   // all persistence keys map directly to keys in paramValues_
@@ -989,6 +1037,23 @@ static NSString *const kUserEmailIsVerifiedKey    = @"isVerified";
   return dict;
 }
 
++ (NSString *)scopeWithStrings:(NSString *)str, ... {
+  // concatenate the strings, joined by a single space
+  NSString *result = @"";
+  NSString *joiner = @"";
+  if (str) {
+    va_list argList;
+    va_start(argList, str);
+    while (str) {
+      result = [result stringByAppendingFormat:@"%@%@", joiner, str];
+      joiner = @" ";
+      str = va_arg(argList, id);
+    }
+    va_end(argList);
+  }
+  return result;
+}
+
 #pragma mark Signing Methods
 
 + (NSString *)HMACSHA1HashForConsumerSecret:(NSString *)consumerSecret
@@ -1184,5 +1249,3 @@ static NSString *const kUserEmailIsVerifiedKey    = @"isVerified";
 }
 
 @end
-
-#endif // #if !GTL_REQUIRE_SERVICE_INCLUDES || GTL_INCLUDE_OAUTH

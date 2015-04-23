@@ -1,7 +1,7 @@
 Pod::Spec.new do |s|
 
   s.name         = "gtm-oauth"
-  s.version      = "0.0.1"
+  s.version      = "1.0.0"
   s.summary      = "Google Toolbox for Mac - OAuth Controllers."
   s.homepage     = "http://code.google.com/p/gtm-oauth"
   s.author       = "Google Inc."
