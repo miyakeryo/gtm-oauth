@@ -6,6 +6,7 @@ Pod::Spec.new do |s|
   s.homepage     = "http://code.google.com/p/gtm-oauth"
   s.author       = "Google Inc."
   s.source       = { :git => 'https://github.com/miyakeryo/gtm-oauth.git'}
+  s.requires_arc = false
 
   s.frameworks = 'Security', 'SystemConfiguration'
 
